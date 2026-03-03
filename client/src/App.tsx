@@ -4,36 +4,51 @@ import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
-import Home from "./pages/Home";
-
+import { GameProvider } from "./contexts/GameContext";
+import Dashboard from "./pages/Dashboard";
+import Log from "./pages/Log";
+import Quests from "./pages/Quests";
+import Stats from "./pages/Stats";
+import Profile from "./pages/Profile";
+import BottomNav from "./components/BottomNav";
 
 function Router() {
   return (
     <Switch>
-      <Route path={"/"} component={Home} />
-      <Route path={"/404"} component={NotFound} />
-      {/* Final fallback route */}
+      <Route path="/" component={Dashboard} />
+      <Route path="/log" component={Log} />
+      <Route path="/quests" component={Quests} />
+      <Route path="/stats" component={Stats} />
+      <Route path="/profile" component={Profile} />
+      <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
   );
 }
 
-// NOTE: About Theme
-// - First choose a default theme according to your design style (dark or light bg), than change color palette in index.css
-//   to keep consistent foreground/background color across components
-// - If you want to make theme switchable, pass `switchable` ThemeProvider and use `useTheme` hook
-
 function App() {
   return (
     <ErrorBoundary>
-      <ThemeProvider
-        defaultTheme="light"
-        // switchable
-      >
-        <TooltipProvider>
-          <Toaster />
-          <Router />
-        </TooltipProvider>
+      <ThemeProvider defaultTheme="dark">
+        <GameProvider>
+          <TooltipProvider>
+            <Toaster
+              theme="dark"
+              toastOptions={{
+                style: {
+                  background: '#0a0e1e',
+                  border: '1px solid rgba(0, 212, 255, 0.2)',
+                  color: '#e5e7eb',
+                  fontFamily: 'Space Grotesk, sans-serif',
+                },
+              }}
+            />
+            <div className="max-w-lg mx-auto relative">
+              <Router />
+              <BottomNav />
+            </div>
+          </TooltipProvider>
+        </GameProvider>
       </ThemeProvider>
     </ErrorBoundary>
   );
