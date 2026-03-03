@@ -1,13 +1,14 @@
 /*
- * Stats Page — Stat breakdown, charts, stat allocation
- * Design: Abyss Interface — animated stat grid, radar chart, XP over time
+ * Stats Page — Stat breakdown, charts, AI summary, monthly analysis
+ * Design: Abyss Interface — animated stat grid, radar chart, XP over time, monthly report
+ * All values derived from actual quests — no dummy data
  */
 import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, TrendingUp } from 'lucide-react';
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, RadarChart, PolarGrid, PolarAngleAxis, Radar } from 'recharts';
+import { Plus, TrendingUp, Brain, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, RadarChart, PolarGrid, PolarAngleAxis, Radar, BarChart, Bar } from 'recharts';
 import { useGame } from '@/contexts/GameContext';
-import { type UserStats, ACTIVITY_TYPES } from '@/lib/gameEngine';
+import { type UserStats, ACTIVITY_TYPES, DEMON_LEVELS, generateStatSummary, generateMonthlyReport, type DemonLevel } from '@/lib/gameEngine';
 import SystemCard from '@/components/SystemCard';
 
 const STAT_CONFIG: Record<keyof UserStats, { label: string; color: string; icon: string }> = {
@@ -19,13 +20,26 @@ const STAT_CONFIG: Record<keyof UserStats, { label: string; color: string; icon:
   luck: { label: 'Luck', color: '#22c55e', icon: '🍀' },
 };
 
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
 export default function Stats() {
   const { user, logs, quests, allocateStat } = useGame();
   const [timeRange, setTimeRange] = useState<7 | 30 | 90>(7);
+  const now = new Date();
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth());
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
+
+  // AI Summary
+  const aiSummary = useMemo(() => generateStatSummary(user, quests, logs), [user, quests, logs]);
+
+  // Monthly report
+  const monthlyReport = useMemo(
+    () => generateMonthlyReport(logs, quests, selectedMonth, selectedYear),
+    [logs, quests, selectedMonth, selectedYear]
+  );
 
   // XP over time chart data
   const xpChartData = useMemo(() => {
-    const now = new Date();
     const days: { date: string; xp: number }[] = [];
     for (let i = timeRange - 1; i >= 0; i--) {
       const d = new Date(now);
@@ -42,7 +56,7 @@ export default function Stats() {
     return days;
   }, [logs, timeRange]);
 
-  // Logs by category
+  // Quest-based activity breakdown
   const categoryData = useMemo(() => {
     const counts: Record<string, number> = {};
     logs.forEach(l => {
@@ -52,7 +66,7 @@ export default function Stats() {
     return Object.entries(counts).map(([name, value]) => ({ name, value }));
   }, [logs]);
 
-  const PIE_COLORS = ['#3b82f6', '#ef4444', '#a855f7', '#22c55e', '#fbbf24', '#00d4ff'];
+  const PIE_COLORS = ['#3b82f6', '#ef4444', '#a855f7', '#22c55e', '#fbbf24', '#00d4ff', '#ec4899', '#f97316'];
 
   // Quest completion rate
   const totalQuests = quests.length;
@@ -63,8 +77,38 @@ export default function Stats() {
   const radarData = Object.entries(user.stats).map(([key, val]) => ({
     stat: STAT_CONFIG[key as keyof UserStats]?.label.slice(0, 3).toUpperCase() || key,
     value: val,
-    fullMark: Math.max(50, val + 10),
+    fullMark: Math.max(20, val + 10),
   }));
+
+  // Monthly daily XP bar chart
+  const monthlyDailyData = useMemo(() => {
+    const daysInMonth = new Date(selectedYear, selectedMonth + 1, 0).getDate();
+    const data = [];
+    for (let d = 1; d <= daysInMonth; d++) {
+      data.push({
+        day: d.toString(),
+        xp: monthlyReport.dailyXP[d.toString()] || 0,
+      });
+    }
+    return data;
+  }, [monthlyReport, selectedMonth, selectedYear]);
+
+  function prevMonth() {
+    if (selectedMonth === 0) {
+      setSelectedMonth(11);
+      setSelectedYear(y => y - 1);
+    } else {
+      setSelectedMonth(m => m - 1);
+    }
+  }
+  function nextMonth() {
+    if (selectedMonth === 11) {
+      setSelectedMonth(0);
+      setSelectedYear(y => y + 1);
+    } else {
+      setSelectedMonth(m => m + 1);
+    }
+  }
 
   return (
     <div className="min-h-screen pb-safe">
@@ -75,9 +119,17 @@ export default function Stats() {
           <p className="text-xs text-gray-500 font-mono mt-1">Analyze your growth, Hunter.</p>
         </motion.div>
 
+        {/* AI Summary */}
+        <SystemCard title="Intelligence Report" delay={0.05} glow>
+          <div className="flex items-start gap-2">
+            <Brain size={16} className="text-cyan-400 shrink-0 mt-0.5" />
+            <p className="text-xs text-gray-300 leading-relaxed">{aiSummary}</p>
+          </div>
+        </SystemCard>
+
         {/* Stat Allocation */}
         {user.statPoints > 0 && (
-          <SystemCard title="Allocate Stat Points" glow delay={0.05}>
+          <SystemCard title="Allocate Stat Points" glow delay={0.08}>
             <p className="text-xs text-amber-400 font-mono mb-3">
               You have <span className="text-lg font-bold">{user.statPoints}</span> points to distribute
             </p>
@@ -127,12 +179,12 @@ export default function Stats() {
           </div>
         </SystemCard>
 
-        {/* Stats Grid */}
+        {/* Detailed Stats — quest-based values */}
         <SystemCard title="Detailed Stats" delay={0.15}>
           <div className="space-y-2">
             {(Object.entries(user.stats) as [keyof UserStats, number][]).map(([key, val]) => {
               const config = STAT_CONFIG[key];
-              const maxVal = Math.max(50, val);
+              const maxVal = Math.max(20, val + 5);
               const pct = (val / maxVal) * 100;
               return (
                 <div key={key} className="flex items-center gap-3">
@@ -152,6 +204,11 @@ export default function Stats() {
               );
             })}
           </div>
+          {logs.length === 0 && (
+            <p className="text-[10px] text-gray-600 font-mono mt-3 text-center">
+              Complete quests to increase your stats.
+            </p>
+          )}
         </SystemCard>
 
         {/* XP Over Time */}
@@ -214,7 +271,7 @@ export default function Stats() {
           </div>
         </SystemCard>
 
-        {/* Logs by Category */}
+        {/* Activity Breakdown */}
         <SystemCard title="Activity Breakdown" delay={0.25}>
           {categoryData.length > 0 ? (
             <div className="flex items-center gap-4">
@@ -248,7 +305,7 @@ export default function Stats() {
               </div>
             </div>
           ) : (
-            <p className="text-center py-6 text-xs text-gray-600 font-mono">Log activities to see breakdown.</p>
+            <p className="text-center py-6 text-xs text-gray-600 font-mono">Complete quests to see activity breakdown.</p>
           )}
         </SystemCard>
 
@@ -282,10 +339,107 @@ export default function Stats() {
               <p className="text-sm text-white font-medium">{completedQuests} of {totalQuests} quests</p>
               <p className="text-[10px] text-gray-500 font-mono mt-1">
                 <TrendingUp size={10} className="inline mr-1" />
-                Keep pushing, Hunter.
+                {totalQuests === 0 ? 'Create quests to track completion.' : 'Keep pushing, Hunter.'}
               </p>
             </div>
           </div>
+        </SystemCard>
+
+        {/* Monthly Analysis */}
+        <SystemCard title="Monthly Analysis" delay={0.35}>
+          {/* Month Selector */}
+          <div className="flex items-center justify-between mb-4">
+            <button onClick={prevMonth} className="p-1 text-gray-500 hover:text-cyan-400 transition-colors">
+              <ChevronLeft size={16} />
+            </button>
+            <div className="flex items-center gap-2">
+              <CalendarDays size={14} className="text-cyan-400" />
+              <span className="font-mono text-sm text-white">
+                {MONTHS[selectedMonth]} {selectedYear}
+              </span>
+            </div>
+            <button onClick={nextMonth} className="p-1 text-gray-500 hover:text-cyan-400 transition-colors">
+              <ChevronRight size={16} />
+            </button>
+          </div>
+
+          {/* Monthly Summary */}
+          <div className="grid grid-cols-2 gap-2 mb-4">
+            <div className="p-2 bg-white/[0.02] rounded-sm text-center">
+              <p className="font-mono text-lg font-bold text-cyan-400">{monthlyReport.totalXP}</p>
+              <p className="text-[9px] text-gray-500 uppercase">XP Earned</p>
+            </div>
+            <div className="p-2 bg-white/[0.02] rounded-sm text-center">
+              <p className="font-mono text-lg font-bold text-white">{monthlyReport.totalLogs}</p>
+              <p className="text-[9px] text-gray-500 uppercase">Activities</p>
+            </div>
+            <div className="p-2 bg-white/[0.02] rounded-sm text-center">
+              <p className="font-mono text-lg font-bold text-emerald-400">{monthlyReport.completedQuests}</p>
+              <p className="text-[9px] text-gray-500 uppercase">Completed</p>
+            </div>
+            <div className="p-2 bg-white/[0.02] rounded-sm text-center">
+              <p className="font-mono text-lg font-bold text-red-400">{monthlyReport.failedQuests}</p>
+              <p className="text-[9px] text-gray-500 uppercase">Failed</p>
+            </div>
+          </div>
+
+          {/* Daily XP Bar Chart */}
+          {monthlyReport.totalLogs > 0 ? (
+            <div className="h-32">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={monthlyDailyData}>
+                  <XAxis
+                    dataKey="day"
+                    tick={{ fill: '#6b7280', fontSize: 7, fontFamily: 'JetBrains Mono' }}
+                    axisLine={{ stroke: 'rgba(0, 212, 255, 0.1)' }}
+                    tickLine={false}
+                    interval={4}
+                  />
+                  <YAxis
+                    tick={{ fill: '#6b7280', fontSize: 8, fontFamily: 'JetBrains Mono' }}
+                    axisLine={false}
+                    tickLine={false}
+                    width={25}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#0a0e1e',
+                      border: '1px solid rgba(0, 212, 255, 0.3)',
+                      borderRadius: '2px',
+                      fontSize: '10px',
+                      fontFamily: 'JetBrains Mono',
+                    }}
+                    labelStyle={{ color: '#9ca3af' }}
+                    formatter={(value: number) => [`${value} XP`, 'XP']}
+                    labelFormatter={(label: string) => `Day ${label}`}
+                  />
+                  <Bar dataKey="xp" fill="#00d4ff" radius={[2, 2, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <p className="text-center py-4 text-xs text-gray-600 font-mono">
+              No data for this month yet.
+            </p>
+          )}
+
+          {/* Completion Rate */}
+          {monthlyReport.totalQuests > 0 && (
+            <div className="mt-3 p-2 bg-white/[0.02] rounded-sm">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] text-gray-500 font-mono">Completion Rate</span>
+                <span className="text-[10px] text-cyan-400 font-mono">{monthlyReport.completionRate}%</span>
+              </div>
+              <div className="h-1.5 bg-white/[0.05] rounded-full overflow-hidden">
+                <motion.div
+                  className="h-full bg-cyan-400 rounded-full"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${monthlyReport.completionRate}%` }}
+                  transition={{ duration: 0.5 }}
+                />
+              </div>
+            </div>
+          )}
         </SystemCard>
       </div>
     </div>

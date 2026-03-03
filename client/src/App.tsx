@@ -1,7 +1,7 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
-import { Route, Switch } from "wouter";
+import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { GameProvider } from "./contexts/GameContext";
@@ -10,19 +10,26 @@ import Log from "./pages/Log";
 import Quests from "./pages/Quests";
 import Stats from "./pages/Stats";
 import Profile from "./pages/Profile";
+import SystemLogPage from "./pages/SystemLog";
 import BottomNav from "./components/BottomNav";
+import PageTransition from "./components/PageTransition";
 
 function Router() {
+  const [location] = useLocation();
+
   return (
-    <Switch>
-      <Route path="/" component={Dashboard} />
-      <Route path="/log" component={Log} />
-      <Route path="/quests" component={Quests} />
-      <Route path="/stats" component={Stats} />
-      <Route path="/profile" component={Profile} />
-      <Route path="/404" component={NotFound} />
-      <Route component={NotFound} />
-    </Switch>
+    <PageTransition locationKey={location}>
+      <Switch>
+        <Route path="/" component={Dashboard} />
+        <Route path="/log" component={Log} />
+        <Route path="/quests" component={Quests} />
+        <Route path="/stats" component={Stats} />
+        <Route path="/profile" component={Profile} />
+        <Route path="/system-log" component={SystemLogPage} />
+        <Route path="/404" component={NotFound} />
+        <Route component={NotFound} />
+      </Switch>
+    </PageTransition>
   );
 }
 

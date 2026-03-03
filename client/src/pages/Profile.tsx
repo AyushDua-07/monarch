@@ -238,7 +238,7 @@ export default function Profile() {
 
         {/* App Info */}
         <div className="text-center py-4">
-          <p className="text-[10px] text-gray-600 font-mono">LEVELING v1.0.0</p>
+          <p className="text-[10px] text-gray-600 font-mono">LEVELING v2.0.0</p>
           <p className="text-[10px] text-gray-700 font-mono">Solo Leveling Inspired Life System</p>
         </div>
       </div>

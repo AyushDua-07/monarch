@@ -1,30 +1,30 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import {
-  type User, type ActivityLog, type Quest, type Punishment, type SystemNotification,
-  type ActivityType, type UserStats, type QuestStatus,
-  calculateXP, xpToNextLevel, getRankForLevel, getStatImpacts,
-  checkTitleUnlocks, generateDailyQuests, generateId, RANK_NAMES,
+  type User, type ActivityLog, type Quest, type SystemLogEntry,
+  type ActivityType, type UserStats, type QuestStatus, type DemonLevel,
+  calculateQuestXP, calculateQuestPenalty, xpToNextLevel, getRankForLevel,
+  getStatImpactsFromQuest, checkTitleUnlocks, generateId, RANK_NAMES,
+  DEMON_LEVELS, getLevelForXP,
 } from '@/lib/gameEngine';
 
 interface GameState {
   user: User;
   logs: ActivityLog[];
   quests: Quest[];
-  punishments: Punishment[];
-  notifications: SystemNotification[];
+  systemLog: SystemLogEntry[];
 }
 
 interface GameContextType extends GameState {
-  logActivity: (type: ActivityType, title: string, notes: string, difficulty: number, durationMinutes: number, quantity: number) => { xpEarned: number; leveledUp: boolean; newLevel: number };
-  completeQuest: (questId: string) => void;
+  completeQuest: (questId: string, notes?: string) => { xpEarned: number; leveledUp: boolean; newLevel: number };
+  failQuest: (questId: string) => void;
   addQuest: (quest: Omit<Quest, 'id' | 'createdAt'>) => void;
   deleteQuest: (questId: string) => void;
   allocateStat: (stat: keyof UserStats) => void;
   updateUserName: (name: string) => void;
   togglePunishments: () => void;
   setActiveTitle: (title: string) => void;
-  dismissNotification: (id: string) => void;
   clearAllData: () => void;
+  checkExpiredQuests: () => void;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
@@ -41,7 +41,7 @@ function createDefaultUser(): User {
     rankTier: 'E',
     currentStreak: 0,
     bestStreak: 0,
-    stats: { strength: 5, endurance: 5, intelligence: 5, discipline: 5, charisma: 5, luck: 3 },
+    stats: { strength: 0, endurance: 0, intelligence: 0, discipline: 0, charisma: 0, luck: 0 },
     statPoints: 0,
     coins: 0,
     titles: [],
@@ -53,23 +53,56 @@ function createDefaultUser(): User {
 }
 
 function createDefaultState(): GameState {
-  const quests = generateDailyQuests().map(q => ({
-    ...q,
-    id: generateId(),
-    createdAt: new Date().toISOString(),
-  }));
-
   return {
     user: createDefaultUser(),
     logs: [],
-    quests,
-    punishments: [],
-    notifications: [{
+    quests: [],
+    systemLog: [{
       id: generateId(),
-      type: 'streak' as const,
+      type: 'system',
       message: 'System initialized. Welcome, Hunter. Your journey begins now.',
       timestamp: new Date().toISOString(),
     }],
+  };
+}
+
+function migrateUser(user: any): User {
+  const defaults = createDefaultUser();
+  return {
+    ...defaults,
+    ...user,
+    stats: user.stats ? {
+      strength: user.stats.strength || 0,
+      endurance: user.stats.endurance || 0,
+      intelligence: user.stats.intelligence || 0,
+      discipline: user.stats.discipline || 0,
+      charisma: user.stats.charisma || 0,
+      luck: user.stats.luck || 0,
+    } : defaults.stats,
+    punishmentsEnabled: user.punishmentsEnabled ?? true,
+    titles: Array.isArray(user.titles) ? user.titles : [],
+    activeTitle: user.activeTitle || '',
+  };
+}
+
+function migrateQuest(q: any): Quest {
+  return {
+    id: q.id || generateId(),
+    title: q.title || 'Unknown Quest',
+    description: q.description || '',
+    target: q.target || '',
+    targetType: q.targetType || 'custom',
+    targetValue: q.targetValue || 1,
+    currentProgress: q.currentProgress || 0,
+    xpReward: q.xpReward || 30,
+    xpPenalty: q.xpPenalty || 15,
+    statRewards: q.statRewards || {},
+    frequency: q.frequency || 'daily',
+    status: q.status || 'active',
+    demonLevel: q.demonLevel || 1,
+    dueDate: q.dueDate || new Date().toISOString(),
+    createdAt: q.createdAt || new Date().toISOString(),
+    completedAt: q.completedAt,
   };
 }
 
@@ -78,56 +111,28 @@ function loadState(): GameState {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
-      // Check if quests need daily refresh
-      const today = new Date().toISOString().split('T')[0];
-      const lastActive = parsed.user?.lastActiveDate;
-      if (lastActive && lastActive !== today) {
-        // Check for missed daily quests and apply punishments
-        const missedQuests = (parsed.quests || []).filter(
-          (q: Quest) => q.status === 'active' && q.frequency === 'daily'
-        );
-        if (missedQuests.length > 0 && parsed.user?.punishmentsEnabled) {
-          const penalty: Punishment = {
-            id: generateId(),
-            ruleType: 'missedDaily',
-            punishmentType: 'XPpenalty',
-            value: missedQuests.length * 10,
-            active: true,
-            description: `Missed ${missedQuests.length} daily quest(s). -${missedQuests.length * 10} XP penalty.`,
-            createdAt: new Date().toISOString(),
-          };
-          parsed.punishments = [...(parsed.punishments || []), penalty];
-          parsed.notifications = [...(parsed.notifications || []), {
-            id: generateId(),
-            type: 'penalty',
-            message: `WARNING: ${missedQuests.length} daily quest(s) were not completed. Penalty applied.`,
-            timestamp: new Date().toISOString(),
-          }];
-          parsed.user.totalXP = Math.max(0, (parsed.user.totalXP || 0) - missedQuests.length * 10);
-        }
-        // Generate new daily quests
-        const newQuests = generateDailyQuests().map(q => ({
-          ...q,
+      // Migrate user
+      const user = migrateUser(parsed.user || {});
+      // Migrate quests
+      const quests = Array.isArray(parsed.quests) ? parsed.quests.map(migrateQuest) : [];
+      // Migrate logs
+      const logs = Array.isArray(parsed.logs) ? parsed.logs.map((l: any) => ({
+        ...l,
+        difficulty: l.difficulty || 1,
+        questId: l.questId || undefined,
+        questTitle: l.questTitle || undefined,
+      })) : [];
+      // Ensure systemLog exists (migration from old format)
+      let systemLog = parsed.systemLog;
+      if (!Array.isArray(systemLog)) {
+        systemLog = Array.isArray(parsed.notifications) ? parsed.notifications : [{
           id: generateId(),
-          createdAt: new Date().toISOString(),
-        }));
-        // Keep weekly/custom quests, replace daily ones
-        const keptQuests = (parsed.quests || []).filter(
-          (q: Quest) => q.frequency !== 'daily'
-        );
-        parsed.quests = [...keptQuests, ...newQuests];
-        // Update streak
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayStr = yesterday.toISOString().split('T')[0];
-        if (lastActive === yesterdayStr) {
-          // Streak continues
-        } else {
-          parsed.user.currentStreak = 0;
-        }
-        parsed.user.lastActiveDate = today;
+          type: 'system',
+          message: 'System migrated to v2.0.',
+          timestamp: new Date().toISOString(),
+        }];
       }
-      return parsed;
+      return { user, quests, logs, systemLog };
     }
   } catch (e) {
     console.error('Failed to load state:', e);
@@ -150,42 +155,125 @@ export function GameProvider({ children }: { children: ReactNode }) {
     saveState(state);
   }, [state]);
 
-  const addNotification = useCallback((type: SystemNotification['type'], message: string) => {
-    const notification: SystemNotification = {
+  const addSystemLog = useCallback((type: SystemLogEntry['type'], message: string, xpChange?: number) => {
+    const entry: SystemLogEntry = {
       id: generateId(),
       type,
       message,
+      xpChange,
       timestamp: new Date().toISOString(),
     };
     setState(prev => ({
       ...prev,
-      notifications: [notification, ...prev.notifications].slice(0, 50),
+      systemLog: [entry, ...prev.systemLog].slice(0, 200),
     }));
   }, []);
 
-  const logActivity = useCallback((
-    type: ActivityType, title: string, notes: string,
-    difficulty: number, durationMinutes: number, quantity: number
-  ) => {
-    const xpEarned = calculateXP(difficulty, durationMinutes, quantity);
-    const statImpacts = getStatImpacts(type, difficulty);
-    const log: ActivityLog = {
-      id: generateId(),
-      type, title, notes, durationMinutes, quantity, difficulty, xpEarned, statImpacts,
-      createdAt: new Date().toISOString(),
-    };
+  // Check for expired quests and apply penalties
+  const checkExpiredQuests = useCallback(() => {
+    setState(prev => {
+      const now = new Date();
+      let newUser = { ...prev.user };
+      const newSystemLog = [...prev.systemLog];
+      const newLogs = [...prev.logs];
+      let changed = false;
 
+      const newQuests = prev.quests.map(q => {
+        if (q.status !== 'active') return q;
+        const due = new Date(q.dueDate);
+        if (now > due) {
+          changed = true;
+          // Apply penalty
+          const penalty = q.xpPenalty;
+          newUser.totalXP = Math.max(0, newUser.totalXP - penalty);
+          // Recalculate level from total XP
+          const { level, currentXP } = getLevelForXP(newUser.totalXP);
+          const oldLevel = newUser.level;
+          newUser.level = level;
+          newUser.currentXP = currentXP;
+          const newRank = getRankForLevel(level);
+          const rankChanged = newRank !== newUser.rankTier;
+          newUser.rankTier = newRank;
+
+          newSystemLog.unshift({
+            id: generateId(),
+            type: 'questFailed',
+            message: `QUEST FAILED: "${q.title}" — ${penalty} XP penalty applied.`,
+            xpChange: -penalty,
+            timestamp: new Date().toISOString(),
+          });
+
+          if (level < oldLevel) {
+            newSystemLog.unshift({
+              id: generateId(),
+              type: 'xpLoss',
+              message: `LEVEL DOWN! Dropped to Level ${level} due to quest failure.`,
+              timestamp: new Date().toISOString(),
+            });
+          }
+          if (rankChanged) {
+            newSystemLog.unshift({
+              id: generateId(),
+              type: 'rankDown',
+              message: `RANK DOWN! You are now ${RANK_NAMES[newRank]} (${newRank}-Rank).`,
+              timestamp: new Date().toISOString(),
+            });
+          }
+
+          return { ...q, status: 'failed' as QuestStatus };
+        }
+        return q;
+      });
+
+      if (!changed) return prev;
+
+      // Update streak
+      const today = new Date().toISOString().split('T')[0];
+      if (newUser.lastActiveDate !== today) {
+        newUser.lastActiveDate = today;
+      }
+
+      return {
+        ...prev,
+        user: newUser,
+        quests: newQuests,
+        systemLog: newSystemLog.slice(0, 200),
+        logs: newLogs,
+      };
+    });
+  }, []);
+
+  // Check expired quests on mount and every minute
+  useEffect(() => {
+    checkExpiredQuests();
+    const interval = setInterval(checkExpiredQuests, 60000);
+    return () => clearInterval(interval);
+  }, [checkExpiredQuests]);
+
+  const completeQuest = useCallback((questId: string, notes?: string) => {
+    let xpEarned = 0;
     let leveledUp = false;
     let newLevel = 0;
 
     setState(prev => {
+      const quest = prev.quests.find(q => q.id === questId);
+      if (!quest || quest.status !== 'active') return prev;
+
+      xpEarned = quest.xpReward;
+      const statImpacts = getStatImpactsFromQuest(quest.targetType, quest.demonLevel);
       const newUser = { ...prev.user };
+
+      // Add XP
       newUser.totalXP += xpEarned;
       newUser.currentXP += xpEarned;
+      newUser.coins += Math.ceil(quest.demonLevel * 2);
 
       // Apply stat impacts
       const newStats = { ...newUser.stats };
       Object.entries(statImpacts).forEach(([key, val]) => {
+        if (val) newStats[key as keyof UserStats] += val;
+      });
+      Object.entries(quest.statRewards).forEach(([key, val]) => {
         if (val) newStats[key as keyof UserStats] += val;
       });
       newUser.stats = newStats;
@@ -218,108 +306,115 @@ export function GameProvider({ children }: { children: ReactNode }) {
       const brandNewTitles = newTitles.filter(t => !newUser.titles.includes(t));
       newUser.titles = Array.from(new Set([...newUser.titles, ...newTitles]));
 
-      // Update quest progress
-      const newQuests = prev.quests.map(q => {
-        if (q.status !== 'active') return q;
-        if (q.targetType === type || (type === 'reading' && q.targetType === 'study')) {
-          const progress = type === 'gym' ? q.currentProgress + 1 : q.currentProgress + durationMinutes;
-          const completed = progress >= q.targetValue;
-          return {
-            ...q,
-            currentProgress: progress,
-            status: completed ? 'completed' as QuestStatus : 'active' as QuestStatus,
-          };
-        }
-        return q;
+      // Create activity log
+      const log: ActivityLog = {
+        id: generateId(),
+        type: quest.targetType,
+        title: `Quest: ${quest.title}`,
+        notes: notes || '',
+        durationMinutes: 0,
+        quantity: quest.targetValue,
+        difficulty: quest.demonLevel,
+        xpEarned,
+        statImpacts,
+        questId: quest.id,
+        questTitle: quest.title,
+        createdAt: new Date().toISOString(),
+      };
+
+      // Build system log entries
+      const newSystemLog = [...prev.systemLog];
+      newSystemLog.unshift({
+        id: generateId(),
+        type: 'questComplete',
+        message: `QUEST COMPLETE: "${quest.title}" — +${xpEarned} XP earned. Demon ${DEMON_LEVELS[quest.demonLevel].name} vanquished!`,
+        xpChange: xpEarned,
+        timestamp: new Date().toISOString(),
       });
 
-      // Build notifications
-      const newNotifications = [...prev.notifications];
       if (leveledUp) {
-        newNotifications.unshift({
-          id: generateId(), type: 'levelUp',
+        newSystemLog.unshift({
+          id: generateId(),
+          type: 'levelUp',
           message: `LEVEL UP! You have reached Level ${newLevel}. +3 stat points awarded.`,
           timestamp: new Date().toISOString(),
         });
       }
       if (rankChanged) {
-        newNotifications.unshift({
-          id: generateId(), type: 'rankUp',
+        newSystemLog.unshift({
+          id: generateId(),
+          type: 'rankUp',
           message: `RANK UP! You are now ${RANK_NAMES[newRank]} (${newRank}-Rank).`,
           timestamp: new Date().toISOString(),
         });
       }
       brandNewTitles.forEach(t => {
-        newNotifications.unshift({
-          id: generateId(), type: 'title',
+        newSystemLog.unshift({
+          id: generateId(),
+          type: 'title',
           message: `NEW TITLE UNLOCKED: "${t}"`,
           timestamp: new Date().toISOString(),
         });
-      });
-      // Check completed quests
-      newQuests.forEach((q, i) => {
-        if (q.status === 'completed' && prev.quests[i]?.status === 'active') {
-          newUser.totalXP += q.xpReward;
-          newUser.currentXP += q.xpReward;
-          newUser.coins += 5;
-          Object.entries(q.statRewards).forEach(([key, val]) => {
-            if (val) newUser.stats[key as keyof UserStats] += val;
-          });
-          newNotifications.unshift({
-            id: generateId(), type: 'questComplete',
-            message: `QUEST COMPLETE: "${q.title}" — +${q.xpReward} XP`,
-            timestamp: new Date().toISOString(),
-          });
-        }
       });
 
       return {
         ...prev,
         user: newUser,
         logs: [log, ...prev.logs],
-        quests: newQuests,
-        notifications: newNotifications.slice(0, 50),
+        quests: prev.quests.map(q =>
+          q.id === questId
+            ? { ...q, status: 'completed' as QuestStatus, currentProgress: q.targetValue, completedAt: new Date().toISOString() }
+            : q
+        ),
+        systemLog: newSystemLog.slice(0, 200),
       };
     });
 
     return { xpEarned, leveledUp, newLevel };
   }, []);
 
-  const completeQuest = useCallback((questId: string) => {
+  const failQuest = useCallback((questId: string) => {
     setState(prev => {
       const quest = prev.quests.find(q => q.id === questId);
       if (!quest || quest.status !== 'active') return prev;
+
+      const penalty = quest.xpPenalty;
       const newUser = { ...prev.user };
-      newUser.totalXP += quest.xpReward;
-      newUser.currentXP += quest.xpReward;
-      newUser.coins += 5;
-      Object.entries(quest.statRewards).forEach(([key, val]) => {
-        if (val) newUser.stats[key as keyof UserStats] += val;
+      newUser.totalXP = Math.max(0, newUser.totalXP - penalty);
+      const { level, currentXP } = getLevelForXP(newUser.totalXP);
+      newUser.level = level;
+      newUser.currentXP = currentXP;
+      newUser.rankTier = getRankForLevel(level);
+
+      const newSystemLog = [...prev.systemLog];
+      newSystemLog.unshift({
+        id: generateId(),
+        type: 'questFailed',
+        message: `QUEST ABANDONED: "${quest.title}" — ${penalty} XP penalty applied.`,
+        xpChange: -penalty,
+        timestamp: new Date().toISOString(),
       });
-      while (newUser.currentXP >= xpToNextLevel(newUser.level)) {
-        newUser.currentXP -= xpToNextLevel(newUser.level);
-        newUser.level += 1;
-        newUser.statPoints += 3;
-        newUser.coins += 10;
-      }
-      newUser.rankTier = getRankForLevel(newUser.level);
+
       return {
         ...prev,
         user: newUser,
-        quests: prev.quests.map(q => q.id === questId ? { ...q, status: 'completed' as QuestStatus, currentProgress: q.targetValue } : q),
-        notifications: [{
-          id: generateId(), type: 'questComplete' as const,
-          message: `QUEST COMPLETE: "${quest.title}" — +${quest.xpReward} XP`,
-          timestamp: new Date().toISOString(),
-        }, ...prev.notifications].slice(0, 50),
+        quests: prev.quests.map(q => q.id === questId ? { ...q, status: 'failed' as QuestStatus } : q),
+        systemLog: newSystemLog.slice(0, 200),
       };
     });
   }, []);
 
   const addQuest = useCallback((quest: Omit<Quest, 'id' | 'createdAt'>) => {
+    const newQuest = { ...quest, id: generateId(), createdAt: new Date().toISOString() };
     setState(prev => ({
       ...prev,
-      quests: [...prev.quests, { ...quest, id: generateId(), createdAt: new Date().toISOString() }],
+      quests: [newQuest, ...prev.quests],
+      systemLog: [{
+        id: generateId(),
+        type: 'questCreated' as const,
+        message: `NEW QUEST: "${quest.title}" — Demon Level: ${DEMON_LEVELS[quest.demonLevel].name}. Reward: +${quest.xpReward} XP. Penalty: -${quest.xpPenalty} XP.`,
+        timestamp: new Date().toISOString(),
+      }, ...prev.systemLog].slice(0, 200),
     }));
   }, []);
 
@@ -356,10 +451,6 @@ export function GameProvider({ children }: { children: ReactNode }) {
     setState(prev => ({ ...prev, user: { ...prev.user, activeTitle: title } }));
   }, []);
 
-  const dismissNotification = useCallback((id: string) => {
-    setState(prev => ({ ...prev, notifications: prev.notifications.filter(n => n.id !== id) }));
-  }, []);
-
   const clearAllData = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
     setState(createDefaultState());
@@ -368,9 +459,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
   return (
     <GameContext.Provider value={{
       ...state,
-      logActivity, completeQuest, addQuest, deleteQuest,
+      completeQuest, failQuest, addQuest, deleteQuest,
       allocateStat, updateUserName, togglePunishments,
-      setActiveTitle, dismissNotification, clearAllData,
+      setActiveTitle, clearAllData, checkExpiredQuests,
     }}>
       {children}
     </GameContext.Provider>

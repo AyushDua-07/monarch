@@ -1,24 +1,29 @@
 /*
  * Dashboard — Hunter Status Window (Home Screen)
- * Design: Abyss Interface — data-rich HUD with rank badge, XP bar, stats grid, quests, recent logs
+ * Design: Abyss Interface — data-rich HUD with rank badge, XP bar, stats grid, quests, recent logs, system feed
+ * All values are real — no dummy data. Everything starts empty until user adds quests.
  */
 import { motion } from 'framer-motion';
-import { Flame, Trophy, Zap, Clock, ChevronRight } from 'lucide-react';
+import { Flame, Trophy, Zap, Clock, ChevronRight, ScrollText, Swords } from 'lucide-react';
 import { Link } from 'wouter';
 import { useGame } from '@/contexts/GameContext';
-import { getRankBadge, ASSETS } from '@/lib/assets';
-import { xpToNextLevel, RANK_COLORS, RANK_NAMES, ACTIVITY_TYPES } from '@/lib/gameEngine';
+import { getRankBadge, ASSETS, getDemonImage } from '@/lib/assets';
+import { xpToNextLevel, RANK_COLORS, RANK_NAMES, ACTIVITY_TYPES, DEMON_LEVELS, type DemonLevel } from '@/lib/gameEngine';
 import SystemCard from '@/components/SystemCard';
 import XPBar from '@/components/XPBar';
 
 export default function Dashboard() {
-  const { user, quests, logs, notifications } = useGame();
+  const { user, quests, logs, systemLog } = useGame();
   const rankColor = RANK_COLORS[user.rankTier];
   const activeQuests = quests.filter(q => q.status === 'active');
-  const completedToday = quests.filter(q => q.status === 'completed').length;
+  const completedToday = quests.filter(q => {
+    if (q.status !== 'completed' || !q.completedAt) return false;
+    return q.completedAt.startsWith(new Date().toISOString().split('T')[0]);
+  }).length;
   const recentLogs = logs.slice(0, 5);
-  const recentNotifs = notifications.slice(0, 5);
+  const recentSystemLog = systemLog.slice(0, 10);
 
+  // Hunter stats — these are real values based on quest activity
   const statEntries = Object.entries(user.stats) as [string, number][];
 
   return (
@@ -102,7 +107,7 @@ export default function Dashboard() {
           </SystemCard>
         </div>
 
-        {/* Stats Grid */}
+        {/* Hunter Stats — real values from quest completions */}
         <SystemCard title="Hunter Stats" delay={0.25}>
           <div className="grid grid-cols-3 gap-3">
             {statEntries.map(([key, val]) => (
@@ -123,11 +128,11 @@ export default function Dashboard() {
           )}
         </SystemCard>
 
-        {/* Today's Quests */}
+        {/* Daily Quests — completely empty until user adds */}
         <SystemCard title="Daily Quests" delay={0.3}>
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs text-gray-500 font-mono">
-              {completedToday}/{quests.filter(q => q.frequency === 'daily').length} COMPLETED
+              {completedToday}/{activeQuests.length + completedToday} COMPLETED TODAY
             </span>
             <Link href="/quests">
               <span className="text-xs text-cyan-400 flex items-center gap-1">
@@ -137,46 +142,50 @@ export default function Dashboard() {
           </div>
           <div className="space-y-2">
             {activeQuests.slice(0, 3).map(quest => {
-              const pct = Math.min(100, (quest.currentProgress / quest.targetValue) * 100);
+              const demonConfig = DEMON_LEVELS[quest.demonLevel];
               return (
                 <div key={quest.id} className="flex items-center gap-3 p-2 bg-white/[0.02] rounded-sm">
+                  <img src={getDemonImage(quest.demonLevel)} alt={demonConfig.name} className="w-8 h-8 object-contain" />
                   <div className="flex-1">
                     <p className="text-sm text-white font-medium">{quest.title}</p>
-                    <p className="text-[10px] text-gray-500 font-mono">{quest.target}</p>
+                    <p className="text-[10px] font-mono" style={{ color: demonConfig.color }}>
+                      {demonConfig.name} · +{quest.xpReward} XP
+                    </p>
                   </div>
-                  <div className="w-20">
-                    <div className="h-1.5 bg-cyan-500/10 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-cyan-400 rounded-full transition-all duration-500"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                    <p className="text-[9px] text-gray-500 text-right mt-0.5 font-mono">{Math.round(pct)}%</p>
+                  <div className="text-right">
+                    <span className="text-[9px] text-gray-500 font-mono">
+                      {quest.frequency}
+                    </span>
                   </div>
-                  <span className="text-[10px] text-amber-400 font-mono">+{quest.xpReward}</span>
                 </div>
               );
             })}
             {activeQuests.length === 0 && (
-              <p className="text-xs text-gray-600 text-center py-4 font-mono">All quests completed. Well done, Hunter.</p>
+              <div className="text-center py-6">
+                <Swords size={24} className="mx-auto mb-2 text-gray-700" />
+                <p className="text-xs text-gray-600 font-mono">No active quests.</p>
+                <Link href="/quests">
+                  <span className="text-xs text-cyan-400 mt-1 inline-block">Create your first quest →</span>
+                </Link>
+              </div>
             )}
           </div>
         </SystemCard>
 
-        {/* Recent Activity */}
+        {/* Recent Logs — quest completion logs, rankings, XP */}
         <SystemCard title="Recent Logs" delay={0.35}>
           <div className="space-y-2">
             {recentLogs.map(log => {
               const actConfig = ACTIVITY_TYPES[log.type];
               return (
                 <div key={log.id} className="flex items-center gap-3 p-2 bg-white/[0.02] rounded-sm">
-                  <span className="text-lg">{actConfig.icon}</span>
+                  <span className="text-lg">{actConfig?.icon || '⚡'}</span>
                   <div className="flex-1">
                     <p className="text-sm text-white">{log.title}</p>
                     <div className="flex items-center gap-2 text-[10px] text-gray-500">
                       <Clock size={10} />
                       {new Date(log.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      {log.durationMinutes > 0 && <span>· {log.durationMinutes}min</span>}
+                      {log.questTitle && <span>· {log.questTitle}</span>}
                     </div>
                   </div>
                   <span className="text-xs text-cyan-400 font-mono">+{log.xpEarned} XP</span>
@@ -185,26 +194,31 @@ export default function Dashboard() {
             })}
             {recentLogs.length === 0 && (
               <div className="text-center py-6">
+                <ScrollText size={24} className="mx-auto mb-2 text-gray-700" />
                 <p className="text-xs text-gray-600 font-mono">No activities logged yet.</p>
-                <Link href="/log">
-                  <span className="text-xs text-cyan-400 mt-1 inline-block">Log your first activity →</span>
-                </Link>
+                <p className="text-[10px] text-gray-700 font-mono mt-1">Complete quests to see logs here.</p>
               </div>
             )}
           </div>
         </SystemCard>
 
-        {/* System Notifications */}
+        {/* System Feed — shows 10 entries, links to full page */}
         <SystemCard title="System Feed" delay={0.4}>
-          <div className="space-y-1.5 max-h-40 overflow-y-auto">
-            {recentNotifs.map(n => {
+          <div className="space-y-1.5">
+            {recentSystemLog.map(n => {
               const typeColors: Record<string, string> = {
                 levelUp: 'text-cyan-400',
                 questComplete: 'text-emerald-400',
+                questFailed: 'text-red-400',
                 rankUp: 'text-amber-400',
+                rankDown: 'text-red-500',
                 penalty: 'text-red-400',
                 title: 'text-purple-400',
                 streak: 'text-orange-400',
+                xpGain: 'text-cyan-300',
+                xpLoss: 'text-red-300',
+                questCreated: 'text-blue-400',
+                system: 'text-gray-400',
               };
               return (
                 <div key={n.id} className="flex gap-2 items-start py-1">
@@ -215,10 +229,24 @@ export default function Dashboard() {
                       {new Date(n.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                     </p>
                   </div>
+                  {n.xpChange && (
+                    <span className={`text-[10px] font-mono ${n.xpChange > 0 ? 'text-cyan-400' : 'text-red-400'}`}>
+                      {n.xpChange > 0 ? '+' : ''}{n.xpChange}
+                    </span>
+                  )}
                 </div>
               );
             })}
           </div>
+          {systemLog.length > 10 && (
+            <Link href="/system-log">
+              <div className="mt-3 text-center py-2 bg-white/[0.02] border border-white/[0.06] rounded-sm hover:bg-white/[0.04] transition-colors">
+                <span className="text-xs text-cyan-400 font-mono flex items-center justify-center gap-1">
+                  View Full System Log <ChevronRight size={12} />
+                </span>
+              </div>
+            </Link>
+          )}
         </SystemCard>
       </div>
     </div>

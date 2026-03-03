@@ -1,14 +1,20 @@
 // ============================================
-// SOLO LEVELING GAME ENGINE
-// Core logic for XP, leveling, ranks, stats
+// SOLO LEVELING GAME ENGINE v2.0
+// Core logic for XP, leveling, ranks, stats,
+// demon difficulty, penalties, and quest system
 // ============================================
 
 export type RankTier = 'E' | 'D' | 'C' | 'B' | 'A' | 'S';
 
-export type ActivityType = 'study' | 'gym' | 'reading' | 'coding' | 'meditation' | 'custom';
+export type ActivityType =
+  | 'study' | 'gym' | 'reading' | 'coding' | 'meditation'
+  | 'running' | 'cooking' | 'cleaning' | 'writing' | 'music'
+  | 'art' | 'language' | 'finance' | 'social' | 'work'
+  | 'health' | 'sleep' | 'hydration' | 'stretching' | 'custom';
 
 export type QuestFrequency = 'daily' | 'weekly' | 'custom';
 export type QuestStatus = 'active' | 'completed' | 'failed';
+export type DemonLevel = 1 | 2 | 3 | 4 | 5 | 6;
 
 export interface UserStats {
   strength: number;
@@ -48,6 +54,8 @@ export interface ActivityLog {
   difficulty: number;
   xpEarned: number;
   statImpacts: Partial<UserStats>;
+  questId?: string;
+  questTitle?: string;
   createdAt: string;
 }
 
@@ -60,38 +68,74 @@ export interface Quest {
   targetValue: number;
   currentProgress: number;
   xpReward: number;
+  xpPenalty: number;
   statRewards: Partial<UserStats>;
   frequency: QuestFrequency;
   status: QuestStatus;
+  demonLevel: DemonLevel;
   dueDate: string;
   createdAt: string;
+  completedAt?: string;
 }
 
-export interface Punishment {
+export interface SystemLogEntry {
   id: string;
-  ruleType: 'missedDaily' | 'missedWeekly';
-  punishmentType: 'XPpenalty' | 'debtQuest' | 'streakFreezeCost' | 'rankWarning';
-  value: number;
-  active: boolean;
-  description: string;
-  createdAt: string;
-}
-
-export interface SystemNotification {
-  id: string;
-  type: 'levelUp' | 'questComplete' | 'rankUp' | 'penalty' | 'title' | 'streak';
+  type: 'levelUp' | 'questComplete' | 'questFailed' | 'rankUp' | 'rankDown' | 'penalty' | 'title' | 'streak' | 'xpGain' | 'xpLoss' | 'questCreated' | 'system';
   message: string;
+  xpChange?: number;
   timestamp: string;
 }
 
+// ---- DEMON LEVEL SYSTEM ----
+
+export const DEMON_LEVELS: Record<DemonLevel, {
+  name: string;
+  color: string;
+  xpMultiplier: number;
+  penaltyMultiplier: number;
+  description: string;
+}> = {
+  1: { name: 'Imp', color: '#6b7280', xpMultiplier: 1.0, penaltyMultiplier: 0.5, description: 'Easy — A minor nuisance' },
+  2: { name: 'Ghoul', color: '#3b82f6', xpMultiplier: 1.5, penaltyMultiplier: 0.8, description: 'Normal — A worthy foe' },
+  3: { name: 'Wraith', color: '#a855f7', xpMultiplier: 2.0, penaltyMultiplier: 1.0, description: 'Hard — Dangerous spirit' },
+  4: { name: 'Berserker', color: '#ef4444', xpMultiplier: 2.8, penaltyMultiplier: 1.5, description: 'Very Hard — Brutal challenge' },
+  5: { name: 'Overlord', color: '#f59e0b', xpMultiplier: 4.0, penaltyMultiplier: 2.0, description: 'Extreme — Near impossible' },
+  6: { name: 'Shadow Monarch', color: '#8b5cf6', xpMultiplier: 6.0, penaltyMultiplier: 3.0, description: 'Legendary — Only the chosen' },
+};
+
+// ---- EXPANDED ACTIVITY TYPES ----
+
+export const ACTIVITY_TYPES: Record<ActivityType, { label: string; icon: string; color: string; statFocus: (keyof UserStats)[] }> = {
+  study:      { label: 'Study',       icon: '📚', color: '#3b82f6', statFocus: ['intelligence', 'discipline'] },
+  gym:        { label: 'Workout',     icon: '💪', color: '#ef4444', statFocus: ['strength', 'endurance'] },
+  reading:    { label: 'Reading',     icon: '📖', color: '#a855f7', statFocus: ['intelligence', 'charisma'] },
+  coding:     { label: 'Coding',      icon: '💻', color: '#22c55e', statFocus: ['intelligence', 'discipline'] },
+  meditation: { label: 'Meditation',  icon: '🧘', color: '#fbbf24', statFocus: ['discipline', 'luck'] },
+  running:    { label: 'Running',     icon: '🏃', color: '#f97316', statFocus: ['endurance', 'strength'] },
+  cooking:    { label: 'Cooking',     icon: '🍳', color: '#ec4899', statFocus: ['charisma', 'discipline'] },
+  cleaning:   { label: 'Cleaning',    icon: '🧹', color: '#14b8a6', statFocus: ['discipline', 'endurance'] },
+  writing:    { label: 'Writing',     icon: '✍️', color: '#8b5cf6', statFocus: ['intelligence', 'charisma'] },
+  music:      { label: 'Music',       icon: '🎵', color: '#e879f9', statFocus: ['charisma', 'luck'] },
+  art:        { label: 'Art',         icon: '🎨', color: '#f472b6', statFocus: ['charisma', 'intelligence'] },
+  language:   { label: 'Language',    icon: '🌍', color: '#06b6d4', statFocus: ['intelligence', 'charisma'] },
+  finance:    { label: 'Finance',     icon: '💰', color: '#84cc16', statFocus: ['intelligence', 'discipline'] },
+  social:     { label: 'Social',      icon: '🤝', color: '#f43f5e', statFocus: ['charisma', 'luck'] },
+  work:       { label: 'Work',        icon: '💼', color: '#64748b', statFocus: ['discipline', 'endurance'] },
+  health:     { label: 'Health',      icon: '❤️', color: '#ef4444', statFocus: ['endurance', 'luck'] },
+  sleep:      { label: 'Sleep',       icon: '😴', color: '#6366f1', statFocus: ['endurance', 'luck'] },
+  hydration:  { label: 'Hydration',   icon: '💧', color: '#0ea5e9', statFocus: ['endurance', 'discipline'] },
+  stretching: { label: 'Stretching',  icon: '🤸', color: '#10b981', statFocus: ['endurance', 'strength'] },
+  custom:     { label: 'Custom',      icon: '⚡', color: '#00d4ff', statFocus: ['discipline'] },
+};
+
 // ---- XP & LEVELING ----
 
-export function calculateXP(difficulty: number, durationMinutes: number, quantity: number): number {
-  const baseXP = 20;
-  const difficultyMultiplier = 0.6 + (difficulty * 0.4); // 1.0 to 2.6
-  const durationFactor = durationMinutes > 0 ? Math.min(2.0, durationMinutes / 30) : 1;
-  const quantityFactor = quantity > 0 ? Math.min(1.5, 0.5 + quantity * 0.1) : 1;
-  return Math.round(baseXP * difficultyMultiplier * Math.max(durationFactor, quantityFactor));
+export function calculateQuestXP(baseXP: number, demonLevel: DemonLevel): number {
+  return Math.round(baseXP * DEMON_LEVELS[demonLevel].xpMultiplier);
+}
+
+export function calculateQuestPenalty(baseXP: number, demonLevel: DemonLevel): number {
+  return Math.round(baseXP * DEMON_LEVELS[demonLevel].penaltyMultiplier);
 }
 
 export function xpToNextLevel(level: number): number {
@@ -117,6 +161,16 @@ export function getRankForLevel(level: number): RankTier {
   return 'E';
 }
 
+export function getLevelForXP(totalXP: number): { level: number; currentXP: number } {
+  let level = 1;
+  let remaining = totalXP;
+  while (remaining >= xpToNextLevel(level)) {
+    remaining -= xpToNextLevel(level);
+    level++;
+  }
+  return { level, currentXP: remaining };
+}
+
 export const RANK_COLORS: Record<RankTier, string> = {
   E: '#9ca3af',
   D: '#22c55e',
@@ -137,29 +191,16 @@ export const RANK_NAMES: Record<RankTier, string> = {
 
 // ---- STAT IMPACTS ----
 
-export function getStatImpacts(type: ActivityType, difficulty: number): Partial<UserStats> {
-  const base = Math.ceil(difficulty * 0.5);
-  const impacts: Record<ActivityType, Partial<UserStats>> = {
-    gym: { strength: base + 2, endurance: base + 1 },
-    study: { intelligence: base + 2, discipline: base + 1 },
-    reading: { intelligence: base + 1, charisma: base },
-    coding: { intelligence: base + 2, discipline: base },
-    meditation: { discipline: base + 2, luck: base },
-    custom: { discipline: base },
-  };
-  return impacts[type] || { discipline: base };
+export function getStatImpactsFromQuest(type: ActivityType, demonLevel: DemonLevel): Partial<UserStats> {
+  const config = ACTIVITY_TYPES[type];
+  if (!config) return { discipline: 1 };
+  const base = Math.ceil(demonLevel * 0.8);
+  const impacts: Partial<UserStats> = {};
+  config.statFocus.forEach((stat, i) => {
+    impacts[stat] = base + (i === 0 ? 2 : 1);
+  });
+  return impacts;
 }
-
-// ---- ACTIVITY TYPE CONFIG ----
-
-export const ACTIVITY_TYPES: Record<ActivityType, { label: string; icon: string; color: string }> = {
-  study: { label: 'Study', icon: '📚', color: '#3b82f6' },
-  gym: { label: 'Workout', icon: '💪', color: '#ef4444' },
-  reading: { label: 'Reading', icon: '📖', color: '#a855f7' },
-  coding: { label: 'Coding', icon: '💻', color: '#22c55e' },
-  meditation: { label: 'Meditation', icon: '🧘', color: '#fbbf24' },
-  custom: { label: 'Custom', icon: '⚡', color: '#00d4ff' },
-};
 
 // ---- TITLE SYSTEM ----
 
@@ -178,52 +219,106 @@ export function checkTitleUnlocks(user: User): string[] {
   return titles;
 }
 
-// ---- DEFAULT QUESTS ----
+// ---- AI SUMMARY GENERATION (client-side) ----
 
-export function generateDailyQuests(): Omit<Quest, 'id' | 'createdAt'>[] {
-  const today = new Date();
-  today.setHours(23, 59, 59, 999);
-  return [
-    {
-      title: 'Morning Training',
-      description: 'Complete a workout session',
-      target: 'Complete 1 workout',
-      targetType: 'gym' as ActivityType,
-      targetValue: 1,
-      currentProgress: 0,
-      xpReward: 50,
-      statRewards: { strength: 2, endurance: 1 },
-      frequency: 'daily' as QuestFrequency,
-      status: 'active' as QuestStatus,
-      dueDate: today.toISOString(),
-    },
-    {
-      title: 'Knowledge Seeker',
-      description: 'Study or read for at least 30 minutes',
-      target: 'Study/Read 30 min',
-      targetType: 'study' as ActivityType,
-      targetValue: 30,
-      currentProgress: 0,
-      xpReward: 40,
-      statRewards: { intelligence: 2 },
-      frequency: 'daily' as QuestFrequency,
-      status: 'active' as QuestStatus,
-      dueDate: today.toISOString(),
-    },
-    {
-      title: 'Inner Peace',
-      description: 'Meditate for 10 minutes',
-      target: 'Meditate 10 min',
-      targetType: 'meditation' as ActivityType,
-      targetValue: 10,
-      currentProgress: 0,
-      xpReward: 30,
-      statRewards: { discipline: 2, luck: 1 },
-      frequency: 'daily' as QuestFrequency,
-      status: 'active' as QuestStatus,
-      dueDate: today.toISOString(),
-    },
-  ];
+export function generateStatSummary(user: User, quests: Quest[], logs: ActivityLog[]): string {
+  const completedQuests = quests.filter(q => q.status === 'completed');
+  const failedQuests = quests.filter(q => q.status === 'failed');
+  const activeQuests = quests.filter(q => q.status === 'active');
+  const totalLogged = logs.length;
+
+  if (totalLogged === 0 && quests.length === 0) {
+    return 'No data available yet. Start creating quests and completing them to see your analysis here.';
+  }
+
+  const statEntries = Object.entries(user.stats) as [keyof UserStats, number][];
+  const topStat = statEntries.sort((a, b) => b[1] - a[1])[0];
+  const weakStat = statEntries.sort((a, b) => a[1] - b[1])[0];
+
+  // Activity breakdown
+  const typeCounts: Record<string, number> = {};
+  logs.forEach(l => {
+    const label = ACTIVITY_TYPES[l.type]?.label || 'Other';
+    typeCounts[label] = (typeCounts[label] || 0) + 1;
+  });
+  const topActivity = Object.entries(typeCounts).sort((a, b) => b[1] - a[1])[0];
+
+  const completionRate = quests.length > 0 ? Math.round((completedQuests.length / quests.length) * 100) : 0;
+
+  let summary = `Hunter ${user.name} — ${RANK_NAMES[user.rankTier]} (Level ${user.level}). `;
+
+  if (completedQuests.length > 0) {
+    summary += `You have completed ${completedQuests.length} quest${completedQuests.length > 1 ? 's' : ''} with a ${completionRate}% completion rate. `;
+  }
+  if (failedQuests.length > 0) {
+    summary += `${failedQuests.length} quest${failedQuests.length > 1 ? 's' : ''} failed — the penalty system has been enforced. `;
+  }
+  if (activeQuests.length > 0) {
+    summary += `${activeQuests.length} quest${activeQuests.length > 1 ? 's remain' : ' remains'} active. `;
+  }
+  if (topStat) {
+    summary += `Your strongest attribute is ${topStat[0]} (${topStat[1]}). `;
+  }
+  if (weakStat && topStat && weakStat[0] !== topStat[0]) {
+    summary += `Consider training ${weakStat[0]} (${weakStat[1]}) to balance your build. `;
+  }
+  if (topActivity) {
+    summary += `Most frequent activity: ${topActivity[0]} (${topActivity[1]} sessions). `;
+  }
+  if (user.currentStreak > 0) {
+    summary += `Current streak: ${user.currentStreak} day${user.currentStreak > 1 ? 's' : ''}. Keep it up!`;
+  }
+
+  return summary;
+}
+
+export function generateMonthlyReport(logs: ActivityLog[], quests: Quest[], month: number, year: number) {
+  const monthLogs = logs.filter(l => {
+    const d = new Date(l.createdAt);
+    return d.getMonth() === month && d.getFullYear() === year;
+  });
+  const monthQuests = quests.filter(q => {
+    const d = new Date(q.createdAt);
+    return d.getMonth() === month && d.getFullYear() === year;
+  });
+
+  const totalXP = monthLogs.reduce((sum, l) => sum + l.xpEarned, 0);
+  const completedQuests = monthQuests.filter(q => q.status === 'completed').length;
+  const failedQuests = monthQuests.filter(q => q.status === 'failed').length;
+  const totalQuests = monthQuests.length;
+  const completionRate = totalQuests > 0 ? Math.round((completedQuests / totalQuests) * 100) : 0;
+
+  // Activity breakdown
+  const typeCounts: Record<string, number> = {};
+  monthLogs.forEach(l => {
+    const label = ACTIVITY_TYPES[l.type]?.label || 'Other';
+    typeCounts[label] = (typeCounts[label] || 0) + 1;
+  });
+
+  // Daily XP
+  const dailyXP: Record<string, number> = {};
+  monthLogs.forEach(l => {
+    const day = new Date(l.createdAt).getDate().toString();
+    dailyXP[day] = (dailyXP[day] || 0) + l.xpEarned;
+  });
+
+  // Demon level breakdown
+  const demonCounts: Record<number, number> = {};
+  monthQuests.forEach(q => {
+    demonCounts[q.demonLevel] = (demonCounts[q.demonLevel] || 0) + 1;
+  });
+
+  return {
+    totalXP,
+    completedQuests,
+    failedQuests,
+    totalQuests,
+    completionRate,
+    typeCounts,
+    dailyXP,
+    demonCounts,
+    totalLogs: monthLogs.length,
+  };
 }
 
 // ---- NANOID REPLACEMENT ----

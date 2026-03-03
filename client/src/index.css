@@ -238,6 +238,29 @@
     padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
   }
 
+  /* Sword slash transition */
+  @keyframes slash-sweep {
+    0% { transform: translateX(-100%) rotate(-45deg); }
+    50% { transform: translateX(0%) rotate(-45deg); }
+    100% { transform: translateX(100%) rotate(-45deg); }
+  }
+
+  .slash-transition {
+    animation: slash-sweep 0.4s ease-in-out;
+  }
+
+  /* Glitch text effect for level up */
+  @keyframes glitch-text {
+    0%, 100% { text-shadow: 2px 0 #00d4ff, -2px 0 #ff0040; }
+    25% { text-shadow: -2px 0 #00d4ff, 2px 0 #ff0040; }
+    50% { text-shadow: 2px 2px #00d4ff, -2px -2px #ff0040; }
+    75% { text-shadow: -2px 2px #00d4ff, 2px -2px #ff0040; }
+  }
+
+  .glitch-text {
+    animation: glitch-text 0.3s ease-in-out infinite;
+  }
+
   /* Scrollbar styling */
   ::-webkit-scrollbar {
     width: 6px;
