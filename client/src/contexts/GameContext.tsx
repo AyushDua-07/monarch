@@ -243,12 +243,95 @@ export function GameProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  // Check expired quests on mount and every minute
+  // Daily quest auto-reset: completed daily quests reappear next day
+  const resetDailyQuests = useCallback(() => {
+    setState(prev => {
+      const today = new Date().toISOString().split('T')[0];
+      const lastReset = prev.user.lastActiveDate;
+      if (lastReset === today) return prev; // Already reset today
+
+      const newQuests = [...prev.quests];
+      const newSystemLog = [...prev.systemLog];
+      let resetCount = 0;
+
+      // Find completed/failed daily quests from previous days and recreate them
+      const dailyTemplates = prev.quests.filter(q =>
+        q.frequency === 'daily' && (q.status === 'completed' || q.status === 'failed')
+      );
+
+      // Also handle custom frequency quests that match today's day
+      const todayDayIndex = new Date().getDay();
+      const customTemplates = prev.quests.filter(q =>
+        q.frequency === 'custom' && (q.status === 'completed' || q.status === 'failed') &&
+        q.selectedDays && q.selectedDays.includes(todayDayIndex)
+      );
+
+      const allTemplates = [...dailyTemplates, ...customTemplates];
+      // Deduplicate by title to avoid re-creating the same quest multiple times
+      const seen = new Set<string>();
+
+      for (const template of allTemplates) {
+        if (seen.has(template.title)) continue;
+        seen.add(template.title);
+
+        // Check if there's already an active quest with the same title today
+        const alreadyActive = newQuests.some(q =>
+          q.title === template.title && q.status === 'active'
+        );
+        if (alreadyActive) continue;
+
+        const dueDate = new Date();
+        dueDate.setHours(23, 59, 59, 999);
+
+        const newQuest: Quest = {
+          id: generateId(),
+          title: template.title,
+          description: template.description,
+          target: template.target,
+          targetType: template.targetType,
+          targetValue: template.targetValue,
+          currentProgress: 0,
+          xpReward: template.xpReward,
+          xpPenalty: template.xpPenalty,
+          statRewards: template.statRewards,
+          frequency: template.frequency,
+          status: 'active',
+          demonLevel: template.demonLevel,
+          dueDate: dueDate.toISOString(),
+          createdAt: new Date().toISOString(),
+          selectedDays: template.selectedDays,
+        };
+        newQuests.unshift(newQuest);
+        resetCount++;
+      }
+
+      if (resetCount === 0) return prev;
+
+      newSystemLog.unshift({
+        id: generateId(),
+        type: 'system',
+        message: `DAILY RESET: ${resetCount} quest${resetCount > 1 ? 's' : ''} renewed for today. The hunt continues.`,
+        timestamp: new Date().toISOString(),
+      });
+
+      return {
+        ...prev,
+        quests: newQuests,
+        systemLog: newSystemLog.slice(0, 200),
+      };
+    });
+  }, []);
+
+  // Check expired quests and reset daily quests on mount and every minute
   useEffect(() => {
+    resetDailyQuests();
     checkExpiredQuests();
-    const interval = setInterval(checkExpiredQuests, 60000);
+    const interval = setInterval(() => {
+      resetDailyQuests();
+      checkExpiredQuests();
+    }, 60000);
     return () => clearInterval(interval);
-  }, [checkExpiredQuests]);
+  }, [checkExpiredQuests, resetDailyQuests]);
 
   const completeQuest = useCallback((questId: string, notes?: string) => {
     let xpEarned = 0;

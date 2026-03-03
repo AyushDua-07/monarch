@@ -76,6 +76,7 @@ export interface Quest {
   dueDate: string;
   createdAt: string;
   completedAt?: string;
+  selectedDays?: number[];
 }
 
 export interface SystemLogEntry {

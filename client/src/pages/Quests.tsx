@@ -90,6 +90,7 @@ export default function Quests() {
       status: 'active',
       demonLevel: qDemonLevel,
       dueDate: dueDate.toISOString(),
+      selectedDays: qFrequency === 'custom' ? qSelectedDays : undefined,
     });
     setShowCreate(false);
     resetForm();
@@ -204,7 +205,7 @@ export default function Quests() {
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 100, opacity: 0 }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="w-full max-w-md bg-[#0a0e1e] border border-cyan-500/20 rounded-t-lg sm:rounded-lg max-h-[90vh] overflow-y-auto"
+              className="w-full max-w-md bg-[#0a0e1e] border border-cyan-500/20 rounded-t-lg sm:rounded-lg max-h-[85vh] overflow-y-auto mb-20 sm:mb-0"
               onClick={e => e.stopPropagation()}
             >
               {/* Modal Header */}
@@ -398,8 +399,8 @@ export default function Quests() {
                 </div>
               </div>
 
-              {/* Sticky Create Button at bottom */}
-              <div className="sticky bottom-0 bg-[#0a0e1e] border-t border-white/5 p-4">
+              {/* Create Button */}
+              <div className="bg-[#0a0e1e] border-t border-white/5 p-4 pb-6">
                 <button
                   type="button"
                   onClick={handleCreateQuest}

@@ -44,3 +44,7 @@
 - [ ] Change frequency to day picker (select any day)
 - [ ] Make demon level images clearly visible
 - [ ] Push DB schema and sync
+
+## v3.1 Fixes
+- [x] Fix Create Quest button hidden behind bottom nav - add padding/margin
+- [x] Add daily quest auto-reset: completed quests reappear next day automatically
