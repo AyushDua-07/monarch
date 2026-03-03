@@ -1,17 +1,19 @@
 /*
- * Profile Page — User preferences, titles, data export, settings
- * Design: Abyss Interface — profile card with rank badge, settings toggles
+ * Profile Page — Hunter identification and settings
+ * v3: Auth integration with sign out and email display
  */
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Download, Trash2, Shield, Award, Edit3, Check, AlertTriangle } from 'lucide-react';
+import { Download, Trash2, Shield, Award, Edit3, Check, AlertTriangle, LogOut } from 'lucide-react';
+import { useAuth } from '@/_core/hooks/useAuth';
 import { useGame } from '@/contexts/GameContext';
 import { getRankBadge } from '@/lib/assets';
-import { RANK_COLORS, RANK_NAMES, xpToNextLevel, getTotalXPForLevel } from '@/lib/gameEngine';
+import { RANK_COLORS, RANK_NAMES, xpToNextLevel } from '@/lib/gameEngine';
 import SystemCard from '@/components/SystemCard';
 import XPBar from '@/components/XPBar';
 
 export default function Profile() {
+  const { user: authUser, logout } = useAuth();
   const { user, updateUserName, togglePunishments, setActiveTitle, clearAllData } = useGame();
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(user.name);
@@ -94,8 +96,11 @@ export default function Profile() {
                 </span>
                 <span className="text-xs text-gray-500">{RANK_NAMES[user.rankTier]}</span>
               </div>
+              {authUser?.email && (
+                <p className="text-[10px] text-gray-500 font-mono mt-1">{authUser.email}</p>
+              )}
               {user.activeTitle && (
-                <p className="text-[10px] text-amber-400 font-mono mt-1">"{user.activeTitle}"</p>
+                <p className="text-[10px] text-amber-400 font-mono mt-0.5">"{user.activeTitle}"</p>
               )}
             </div>
           </div>
@@ -197,6 +202,19 @@ export default function Profile() {
               </div>
             </motion.button>
 
+            {/* Sign Out */}
+            <motion.button
+              whileTap={{ scale: 0.97 }}
+              onClick={() => logout()}
+              className="w-full flex items-center gap-3 p-3 bg-amber-500/5 rounded-sm hover:bg-amber-500/10 transition-colors"
+            >
+              <LogOut size={14} className="text-amber-400" />
+              <div className="text-left">
+                <p className="text-sm text-amber-400">Sign Out</p>
+                <p className="text-[10px] text-gray-500">Log out of your account</p>
+              </div>
+            </motion.button>
+
             {/* Clear Data */}
             {!showConfirmClear ? (
               <motion.button
@@ -238,7 +256,7 @@ export default function Profile() {
 
         {/* App Info */}
         <div className="text-center py-4">
-          <p className="text-[10px] text-gray-600 font-mono">LEVELING v2.0.0</p>
+          <p className="text-[10px] text-gray-600 font-mono">LEVELING v3.0.0</p>
           <p className="text-[10px] text-gray-700 font-mono">Solo Leveling Inspired Life System</p>
         </div>
       </div>

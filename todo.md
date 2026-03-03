@@ -36,3 +36,11 @@
 - [ ] Quest completion gives XP
 - [ ] Incomplete quests decrease XP and can lower rank
 - [ ] All values start at zero — no dummy data
+
+## v3 Changes
+- [ ] Add email login system with Manus OAuth
+- [ ] Remove all preset demo values everywhere
+- [ ] Fix Create Quest button accessibility at bottom
+- [ ] Change frequency to day picker (select any day)
+- [ ] Make demon level images clearly visible
+- [ ] Push DB schema and sync
