@@ -48,3 +48,6 @@
 ## v3.1 Fixes
 - [x] Fix Create Quest button hidden behind bottom nav - add padding/margin
 - [x] Add daily quest auto-reset: completed quests reappear next day automatically
+
+## v3.2 Fixes
+- [x] Replace handleComplete with quest respawn logic - completed daily/custom quests auto-create next occurrence
