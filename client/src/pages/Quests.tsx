@@ -107,13 +107,58 @@ export default function Quests() {
     setQSelectedDays([0, 1, 2, 3, 4, 5, 6]);
   }
 
-  function handleComplete(questId: string) {
-    const result = completeQuest(questId);
-    if (result.leveledUp) {
-      setNewLevel(result.newLevel);
-      setTimeout(() => setShowLevelUp(true), 300);
+function handleComplete(questId: string) {
+  const quest = quests.find(q => q.id === questId);
+  const result = completeQuest(questId);
+
+  if (quest) {
+    let nextDue: Date | null = null;
+
+    if (quest.frequency === 'daily') {
+      nextDue = new Date();
+      nextDue.setDate(nextDue.getDate() + 1);
+      nextDue.setHours(23, 59, 59, 999);
+    } else if (quest.frequency === 'custom' && quest.selectedDays?.length) {
+      const today = new Date().getDay();
+      const sortedDays = [...quest.selectedDays].sort();
+      const nextDay = sortedDays.find(d => d > today) ?? sortedDays[0];
+      const daysUntil = nextDay > today ? nextDay - today : 7 - today + nextDay;
+      nextDue = new Date();
+      nextDue.setDate(nextDue.getDate() + daysUntil);
+      nextDue.setHours(23, 59, 59, 999);
+    }
+
+    if (nextDue) {
+      const nextDueISO = nextDue.toISOString();
+      const alreadyRespawned = quests.some(
+        q => q.title === quest.title && q.status === 'active' && q.dueDate === nextDueISO
+      );
+      if (!alreadyRespawned) {
+        addQuest({
+          title: quest.title,
+          description: quest.description,
+          target: quest.target,
+          targetType: quest.targetType,
+          targetValue: quest.targetValue,
+          currentProgress: 0,
+          xpReward: quest.xpReward,
+          xpPenalty: quest.xpPenalty,
+          statRewards: quest.statRewards,
+          frequency: quest.frequency,
+          status: 'active',
+          demonLevel: quest.demonLevel,
+          dueDate: nextDueISO,
+          selectedDays: quest.selectedDays,
+        });
+      }
     }
   }
+
+  if (result.leveledUp) {
+    setNewLevel(result.newLevel);
+    setTimeout(() => setShowLevelUp(true), 300);
+  }
+}
 
   const displayQuests = tab === 'active' ? activeQuests : tab === 'completed' ? completedQuests : failedQuests;
 
