@@ -4,14 +4,20 @@ import react from "@vitejs/plugin-react";
 import fs from "node:fs";
 import path from "node:path";
 import { defineConfig, type Plugin, type ViteDevServer } from "vite";
-import { vitePluginManusRuntime } from "vite-plugin-manus-runtime";
+import { fileURLToPath } from "node:url";
+import { dirname } from "node:path";
+
+// ✅ FIX: Use __dirname instead of import.meta.dirname for Node.js compatibility
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // =============================================================================
 // Manus Debug Collector - Vite Plugin
 // Writes browser logs directly to files, trimmed when exceeding size limit
+// ✅ PRODUCTION SAFE: Disabled in production builds
 // =============================================================================
 
-const PROJECT_ROOT = import.meta.dirname;
+const PROJECT_ROOT = __dirname;
 const LOG_DIR = path.join(PROJECT_ROOT, ".manus-logs");
 const MAX_LOG_SIZE_BYTES = 1 * 1024 * 1024; // 1MB per log file
 const TRIM_TARGET_BYTES = Math.floor(MAX_LOG_SIZE_BYTES * 0.6); // Trim to 60% to avoid constant re-trimming
@@ -19,6 +25,10 @@ const TRIM_TARGET_BYTES = Math.floor(MAX_LOG_SIZE_BYTES * 0.6); // Trim to 60% t
 type LogSource = "browserConsole" | "networkRequests" | "sessionReplay";
 
 function ensureLogDir() {
+  // ✅ FIX: Only create logs directory in development
+  if (process.env.NODE_ENV === "production") {
+    return;
+  }
   if (!fs.existsSync(LOG_DIR)) {
     fs.mkdirSync(LOG_DIR, { recursive: true });
   }
@@ -50,7 +60,10 @@ function trimLogFile(logPath: string, maxSize: number) {
 }
 
 function writeToLogFile(source: LogSource, entries: unknown[]) {
-  if (entries.length === 0) return;
+  // ✅ FIX: Skip logging in production
+  if (process.env.NODE_ENV === "production" || entries.length === 0) {
+    return;
+  }
 
   ensureLogDir();
   const logPath = path.join(LOG_DIR, `${source}.log`);
@@ -73,12 +86,14 @@ function writeToLogFile(source: LogSource, entries: unknown[]) {
  * - POST /__manus__/logs: Browser sends logs, written directly to files
  * - Files: browserConsole.log, networkRequests.log, sessionReplay.log
  * - Auto-trimmed when exceeding 1MB (keeps newest entries)
+ * - ✅ PRODUCTION SAFE: Disabled in production builds
  */
 function vitePluginManusDebugCollector(): Plugin {
   return {
     name: "manus-debug-collector",
 
     transformIndexHtml(html) {
+      // ✅ FIX: Only inject debug script in development
       if (process.env.NODE_ENV === "production") {
         return html;
       }
@@ -150,22 +165,29 @@ function vitePluginManusDebugCollector(): Plugin {
   };
 }
 
-const plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusRuntime(), vitePluginManusDebugCollector()];
+// ✅ FIX: Only load manus plugins in development
+const devPlugins = [vitePluginManusRuntime(), vitePluginManusDebugCollector()];
+const plugins = [
+  react(),
+  tailwindcss(),
+  jsxLocPlugin(),
+  ...(process.env.NODE_ENV === "production" ? [] : devPlugins),
+];
 
 export default defineConfig({
   plugins,
   resolve: {
     alias: {
-      "@": path.resolve(import.meta.dirname, "client", "src"),
-      "@shared": path.resolve(import.meta.dirname, "shared"),
-      "@assets": path.resolve(import.meta.dirname, "attached_assets"),
+      "@": path.resolve(__dirname, "client", "src"),
+      "@shared": path.resolve(__dirname, "shared"),
+      "@assets": path.resolve(__dirname, "attached_assets"),
     },
   },
-  envDir: path.resolve(import.meta.dirname),
-  root: path.resolve(import.meta.dirname, "client"),
-  publicDir: path.resolve(import.meta.dirname, "client", "public"),
+  envDir: path.resolve(__dirname),
+  root: path.resolve(__dirname, "client"),
+  publicDir: path.resolve(__dirname, "client", "public"),
   build: {
-    outDir: path.resolve(import.meta.dirname, "dist/public"),
+    outDir: path.resolve(__dirname, "dist/public"),
     emptyOutDir: true,
   },
   server: {
