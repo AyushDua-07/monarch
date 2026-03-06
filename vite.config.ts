@@ -165,8 +165,9 @@ function vitePluginManusDebugCollector(): Plugin {
   };
 }
 
-// ✅ FIX: Only load manus plugins in development
-const devPlugins = [vitePluginManusRuntime(), vitePluginManusDebugCollector()];
+// ✅ FIX: Only load manus debug collector in development
+// vitePluginManusRuntime is not imported, so we skip it
+const devPlugins = [vitePluginManusDebugCollector()];
 const plugins = [
   react(),
   tailwindcss(),
